@@ -7,3 +7,9 @@
 <hr>
 
 
+### User Mode Vs System Mode:
+
+The standard UI's the API calls (Rest, SOAP, UI API) then execute anonymous and the standard controllers are RUN in USER MODE! (Means CRUD , FLS and Sharing is Enforced).
+
+The Apex Classes, Apex Triggers, Apex Web services are Run in SYSTEM MODE. (Means CRUD, FLS and Sharing Not Enforced).
+
