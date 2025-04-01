@@ -12,5 +12,3 @@ The standard UI's the API calls (Rest, SOAP, UI API) then execute anonymous and 
 
 The Apex Classes, Apex Triggers, Apex Web services are Run in SYSTEM MODE. (Means CRUD, FLS and Sharing Not Enforced).
 
-
-/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\//\/\/\/\/\/\/
