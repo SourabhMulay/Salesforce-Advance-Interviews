@@ -29,10 +29,10 @@ With Security Enforced those checks are very simple!! So if i select Account or 
 
 StripInaccessible() : So In case user do not have access to some of the fields which they have not have access so it will return null for those.
 
-```
+``` apex
 sObjectAccessDecision securityDecision = Security.stripInaccessible(
-AccessType.READABLE,
-[select name, amount, industry from account order by name]
+  AccessType.READABLE,
+  [select name, amount, industry from account order by name]
 );
 ```
 
