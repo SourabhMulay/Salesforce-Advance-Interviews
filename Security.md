@@ -63,3 +63,14 @@ insert securityDecision.getrecords()[0];
 ```
 
 So In this case it will strip off those fields which user do not have access with and save the record with values which they have access with.
+
+
+## Record Sharing: 
+
+With Sharing:  The class will enforce Record level Security
+
+Without Sharing : No record level security enforced
+
+Inherited Sharing: Inherited from parent, with sharing if entry point!! if class defined with inherited sharing and it's entry point then the access is with sharing.
+
+no sharing clause: Inherited from parent, wihtout sharing if entry point!!! except for lightning! (Components)
