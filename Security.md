@@ -27,3 +27,12 @@ Before querying the Object you can check if it's accessible using schema.sObject
 
 With Security Enforced those checks are very simple!! So if i select Account or query accounts with security Enforced, if i do not have anu permission over any field i will receive the error. "Query includes inaccessible fields".
 
+StripInaccessible() : So In case user do not have access to some of the fields which they have not have access so it will return null for those.
+
+```
+sObjectAccessDecision securityDecision = Security.stripInaccessible(
+AccessType.READABLE,
+[select name, amount, industry from account order by name]
+);
+```
+
