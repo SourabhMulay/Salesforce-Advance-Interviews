@@ -79,4 +79,8 @@ LDS: Lightning Data Service adapters enforce the CRUD, FLS and sharing.
 
 ## Application Security
 
+Prevent vulnarabilities!
+
+
+
 
