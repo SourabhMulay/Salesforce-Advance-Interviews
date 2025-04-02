@@ -77,5 +77,6 @@ no sharing clause: Inherited from parent, wihtout sharing if entry point!!! exce
 
 LDS: Lightning Data Service adapters enforce the CRUD, FLS and sharing.
 
+## Application Security
 
 
