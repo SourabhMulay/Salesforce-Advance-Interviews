@@ -36,3 +36,4 @@ sObjectAccessDecision securityDecision = Security.stripInaccessible(
 );
 ```
 
+So it will first check object level permission and then it will look for FLS beaucase if you have access to object and not have access to fields, you cannot access fields.
