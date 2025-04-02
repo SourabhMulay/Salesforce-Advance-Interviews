@@ -74,3 +74,8 @@ Without Sharing : No record level security enforced
 Inherited Sharing: Inherited from parent, with sharing if entry point!! if class defined with inherited sharing and it's entry point then the access is with sharing.
 
 no sharing clause: Inherited from parent, wihtout sharing if entry point!!! except for lightning! (Components)
+
+LDS: Lightning Data Service adapters enforce the CRUD, FLS and sharing.
+
+
+
