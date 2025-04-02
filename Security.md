@@ -37,3 +37,29 @@ sObjectAccessDecision securityDecision = Security.stripInaccessible(
 ```
 
 So it will first check object level permission and then it will look for FLS beaucase if you have access to object and not have access to fields, you cannot access fields.
+
+What if we wanted to have DML on the record!!!
+
+So Schema.sObjectType.Account.isCreatable() will provide you the object level check so before inserting it you'll check if you have create acess to the record of that object.
+
+StripInaccessible works in the same case so if the user have the access to the fields those fields only will get populate!!
+
+```apex
+
+account acc=new account();
+acc.name='saurabh';
+acc.amount=12;
+acc.industry='Pam';
+
+
+sObjectAccessDecision securityDecision = Security.StripInaccessible(
+  accessType.CREATEABLE,
+
+  new lit<account>{acc}
+);
+
+insert securityDecision.getrecords()[0];
+
+```
+
+So In this case it will strip off those fields which user do not have access with and save the record with values which they have access with.
