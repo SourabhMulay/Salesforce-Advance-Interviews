@@ -287,4 +287,72 @@ List<Account> targetedAccounts = [
 ];
 ```
 
+## You’re processing customer payments through a REST API (like Stripe or Razorpay). How do you ensure that if the payment succeeds externally but fails to update in Salesforce, you don’t double charge the user?
+
+Generate and Save the Key: Before making any callout, Salesforce generates a universally unique identifier (UUID) and saves it to the database (e.g., in a custom field like Idempotency_Key__c on a Transaction__c record).
+
+Send the Request: Your Apex code makes the HTTP POST callout to the gateway (like Stripe) and includes this unique key in a specific HTTP header (literally called Idempotency-Key).
+
+External Processing: Stripe receives the request, charges the customer's card 💳, and caches the successful JSON response on its end, permanently linking it to your UUID.
+
+The Salesforce Failure: The network connection drops, or an Apex trigger throws an error upon return. The Salesforce database rolls back, leaving the invoice marked as "Unpaid."
+
+The Safe Retry: Later, a Scheduled Batch job (or a user clicking a button) attempts the payment again. The Apex code retrieves the exact same Idempotency Key from the database and sends it in the new callout.
+
+Double-Charge Prevented 🛑: Stripe receives the second request, reads the header, and realizes it already processed this exact key. It bypasses the banking network entirely and simply returns the cached "Success" response from the first attempt.
+
+To implement this properly in Salesforce, we have to save that unique key to the database before we make the HTTP callout.
+
+If you perform a DML insert or update to save the key, and then immediately try to make the HTTP callout in the exact same synchronous Apex transaction, what specific error will Salesforce throw?
+
+Salesforce will throw a System.CalloutException: You have uncommitted work pending. Please commit or rollback before calling out.
+
+Here is why Salesforce enforces this strict rule: When you perform DML (like saving our new Idempotency Key), Salesforce temporarily locks those rows in the database. If it then allowed you to make a synchronous HTTP callout that took 10 seconds to get a response from Stripe, that database lock would be held open the entire time. This would block other processes and severely degrade overall system performance.
+
+So, we find ourselves in an architectural bind. We must save the unique key to the database first, but we cannot make the callout in the same transaction after doing so.
+
+What specific asynchronous Apex feature could we call right after our DML insert to ensure the HTTP request happens in a completely separate transaction?
+
+By using System.enqueueJob(), you are essentially telling Salesforce: "I am done with my current transaction. Go ahead and commit this new Idempotency Key to the database 🗄️. Then, in a brand new transaction, run my callout."
+
+Because the callout happens in that separate transaction, the initial database locks are released, and you completely avoid that pending work exception.
+
+
+## A batch job makes 100 payment callouts where 80 succeed, 20 fail.How would you track failed transactions and reprocess them later without duplicating successful ones?
+
+Here is the architecture for the Batch job:
+
+State Tracking (The Filter) 🗄️: We add a Payment_Status__c picklist to the transaction record (with values like 'Pending', 'Success', 'Failed'). The Batch start method's SOQL query is written to only select records where Payment_Status__c IN ('Pending', 'Failed'). This naturally filters out the 80 successful records so they aren't even queried during the next run.
+
+The Safety Net (Idempotency) 🔑: Every record must have an Idempotency_Key__c generated when it is initially created. If a network timeout causes Salesforce to mark a payment as 'Failed' even though the external gateway actually processed it, the next batch run will safely send the same key, preventing a double-charge.
+
+The Execute Block 🔁: Inside the execute method, you loop through the records, make the callouts, evaluate the HTTP responses (e.g., 200 vs 500), and update the Payment_Status__c on each record in memory. Finally, you perform a DML update on the entire list at the end of the chunk.
+
+Gemini said
+You are on the right track thinking about how we perform the DML update, but there is a dangerous trap here! 🪤
+
+If that callout exception is unhandled, the loop explodes 💥. The entire Apex chunk immediately crashes and rolls back. This means all the Payment_Status__c updates you carefully prepared in memory for records 1 through 44 vanish completely. The code never even reaches your DML statement at the end of the method!
+
+To protect the successful records, we must wrap the callout logic inside the loop with a try-catch block 🛡️.
+
+By catching the exception, we can mark record #45's status as 'Failed' in memory, gracefully handle the error, and allow the loop to continue processing records 46 through 100.
+
+Once the loop successfully finishes, we take our list of 100 updated records and perform our DML operation. To ensure that any database-level errors (like a validation rule on one specific record) don't blow up the entire save operation, we use Database.update().
+
+
+## The external payment service sends asynchronous callbacks (webhooks) How would you design an Apex REST endpoint to receive and validate these securely ?
+
+Here is the architectural blueprint for a secure webhook endpoint:
+
+The Endpoint Setup 🚪: We create a global Apex class annotated with @RestResource(urlMapping='/payments/webhook/*') and a method annotated with @HttpPost to catch the incoming JSON payload.
+
+The Secret Key 🗝️: You store a webhook secret (provided by the payment gateway) securely in Salesforce, typically in a Custom Metadata Type or Named Credential/Custom Setting.
+
+The Signature Header 📨: When the payment gateway sends the webhook, it doesn't just send the JSON data. It uses that secret key to generate a cryptographic hash of the data, and places that hash into a specific HTTP header (like Stripe-Signature).
+
+The Validation (The Bouncer) 🛡️: Inside your Apex method, you grab the raw JSON body and the signature header using RestContext.request. Your code then takes the raw JSON body and your stored secret key, and calculates its own hash.
+
+The Comparison ⚖️: If your calculated hash perfectly matches the hash sent in the header, the request is authentic and the data has not been tampered with. If they don't match, you immediately return an HTTP 401 Unauthorized status.
+
+
 
