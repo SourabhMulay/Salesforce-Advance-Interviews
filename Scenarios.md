@@ -163,5 +163,128 @@ It is basically a relay race where the baton is the next page token! 🏃‍♂�
 
 ## What happens if a Named Credential's authentication token expires mid-transaction during an Apex callout?
 
+If a Named Credential's token expires exactly mid-transaction, the external server will reject the request and return an HTTP 401 (Unauthorized) status code back to your Apex code.
+
+However, how the system recovers depends entirely on how you configured the Named Credential:
+
+With OAuth & Refresh Tokens 🔄: This is where Named Credentials shine. If configured with an Auth. Provider that supports refresh tokens, Salesforce manages the lifecycle automatically. If the platform detects the access token is expired, it will seamlessly use the refresh token to get a new one. But, if the token expires at the exact millisecond the request is in flight, your current Apex transaction will still receive that 401 error.
+
+Without Refresh Tokens (or Basic Auth): The callout simply fails. An administrator or user will have to manually re-authenticate the Named Credential.
+
+To build a truly resilient enterprise integration, your Apex code should check if (response.getStatusCode() == 401) and contain logic to gracefully retry the callout or log the failure for a background job to pick up.
+
+## What happens if two simultaneous inbound API requests try to upsert the same record in Salesforce at the same time?
+
+This creates a classic database race condition! 🏎️
+
+When two API requests try to upsert the exact same record at the exact same millisecond, the outcome depends on the current state of the database:
+
+1. The Row Lock Error 🔒
+If the record already exists in Salesforce, the first request will temporarily lock the record to update it. If the second request tries to touch that exact same record before the first one finishes, the second request will fail and return a dreaded UNABLE_TO_LOCK_ROW error.
+
+2. The Duplicate Creation Trap 👯
+This is the sneakier scenario. Let's say the record doesn't exist yet, and both requests are relying on an External ID to perform the upsert.
+
+Both requests search the database simultaneously.
+
+Both see that the External ID does not exist.
+
+Both decide to perform an insert.
+Because the database index hasn't had time to update from the first request, Salesforce might actually let both inserts succeed, leaving you with two duplicate records instead of one!
+
+To prevent this kind of chaos, enterprise architects often design integrations to use idempotency.
+
+Have you worked with idempotency keys before, or would you like to explore how we use them to ensure a request is only processed once?
+
+Let's break down idempotency.
+
+In computer science, an operation is idempotent if performing it multiple times produces the exact same result as performing it just once.
+
+Here is a simple analogy:
+
+Non-idempotent: Pushing a "Next Track" button ⏭️ on a music player. If you push it three times, you skip three songs. The system state changes with every push.
+
+Idempotent: Pushing a "Pause" button ⏸️. If you push it once, the music stops. If you panic and mash the button three more times, the music is still just paused. The end result is identical.
+
+In the context of APIs and our Stripe payment scenario, idempotency protects us from network hiccups.
+
+When Salesforce initiates a payment, it generates a unique ID (an Idempotency Key 🔑) and sends it in the HTTP header. Stripe receives the request, charges the card, and saves the receipt linked to that specific key.
+
+If the network connection drops before Salesforce gets the receipt, Salesforce will automatically retry the request. Because the retry contains the exact same Idempotency Key, Stripe realizes it already processed this transaction. Instead of charging the card a second time, it simply replies with the saved receipt from the first attempt.
+
+## Write an optimized query to find top 3 performing Accounts per Region based on total Opportunity revenue, using only one aggregation query ?
+
+The trick here is that standard SOQL does not support window functions (like PARTITION BY in standard SQL). This means you cannot apply a LIMIT 3 per region directly inside the database query itself.
+
+To solve this while adhering to the constraint of "only one aggregation query", we have to split the work:
+
+The Database (SOQL): Write a single Aggregate SOQL query that calculates the total revenue for every account, grouped by region, and sorts the results perfectly.
+
+The Server (Apex): Use a loop in Apex to process the sorted results and pluck out just the top 3 for each region.
+
+````
+Map<String, List<Id>> topAccountsPerRegion = new Map<String, List<Id>>();
+
+// 1. The Single Aggregation Query
+// We sort by Region first, then by the highest Revenue descending.
+List<AggregateResult> results = [
+    SELECT Account.Region__c region, AccountId, SUM(Amount) totalRevenue
+    FROM Opportunity
+    WHERE Account.Region__c != null 
+    GROUP BY Account.Region__c, AccountId
+    ORDER BY Account.Region__c ASC, SUM(Amount) DESC
+];
+
+// 2. The Apex Loop 
+for (AggregateResult ar : results) {
+    String region = (String)ar.get('region');
+    Id accId = (Id)ar.get('AccountId');
+
+    // If this is the first time we see this region, create a new list for it
+    if (!topAccountsPerRegion.containsKey(region)) {
+        topAccountsPerRegion.put(region, new List<Id>());
+    }
+
+    // Since the query is already sorted by highest revenue, 
+    // the first 3 accounts we process for any region ARE the top 3.
+    if (topAccountsPerRegion.get(region).size() < 3) {
+        topAccountsPerRegion.get(region).add(accId);
+    }
+}
+
+System.debug(topAccountsPerRegion);
+````
+
+
+## Your query on OpportunityLineItem is running through 8 million records , how would you improve its performance using custom indexes?
+
+Let's dive into Large Data Volumes (LDV) and SOQL performance ⚡.
+
+When you query against 8 million OpportunityLineItem records, you run the risk of a "Full Table Scan." This means the database engine has to check every single row to see if it matches your WHERE clause, which will quickly time out or hit Salesforce governor limits.
+
+To fix this, we use indexes. Think of an index like the index at the back of a textbook 📚. Instead of reading every page to find a specific topic, you check the index, which tells you exactly which pages to flip to.
+
+Salesforce automatically indexes standard fields like Id, Name, and CreatedDate. For your own fields, you can ask Salesforce Support to create a Custom Index to speed things up.
+
+However, there is a catch! Just having a custom index doesn't mean Salesforce will actually use it. The query optimizer evaluates your WHERE clause to decide if using the index is worth the effort. This concept is called Selectivity.
+
+To make the query optimizer actually use your custom index, your WHERE clause needs to filter out the vast majority of those 8 million records.
+
+Spot on! You hit on one of the most critical rules of SOQL optimization.
+
+Even if you build a perfect Custom Index, the Salesforce query optimizer will completely ignore it and do a full table scan if you use negative operators (like !=, NOT LIKE, EXCLUDES) or leading wildcards (like LIKE '%something'). The database engine simply cannot use an index efficiently for those types of searches.
+
+To close the loop on the selectivity threshold: for the optimizer to actually use your custom index on those 8 million records, your WHERE clause generally needs to target less than 5% of the total records (and usually under a hard cap of 333,333 records). If it returns more than that, the optimizer decides it is faster to just scan the whole table anyway.
+
+
+## You must perform cross object filtering (Account → Case → Product__c) in one SOQL like query . How will you do it in Apex ?
+
+```
+List<Account> targetedAccounts = [
+    SELECT Id, Name 
+    FROM Account 
+    WHERE Id IN (SELECT AccountId FROM Case WHERE Product__c = 'Specific Product')
+];
+```
 
 
