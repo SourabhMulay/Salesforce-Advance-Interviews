@@ -133,4 +133,35 @@ What do you think happens in this case? Does Apex throw an error because of the 
 - No Apex will not throw exception: Apex only throws a System.StringException if it is missing an argument for a placeholder.
 
 
+## How do you handle pagination when an external REST API returns large datasets across multiple pages in Apex?
+
+Handling large, paginated API responses in Apex is all about navigating Salesforce's strict Governor Limits—specifically, the maximum number of callouts per transaction (typically 100) and the Heap Size limit 📦 (6MB synchronous, 12MB asynchronous).
+
+If an external system has 500 pages of data, a single standard Apex transaction will time out or crash before it finishes fetching and processing them all. To solve this, we have to break the work apart.
+
+The approach we choose depends entirely on the business requirement.
+
+Let's look at a specific backend scenario: Imagine you need to build a nightly process that fetches 200 pages of newly created invoices from an external ERP system and saves them as Salesforce records ☁️.
+
+Because this is a heavy data-processing task that runs in the background, we need a way to make a callout for Page 1, process the data, and then somehow start a brand new transaction to fetch Page 2 using the nextPageToken.
+
+Which asynchronous Apex feature allows you to chain jobs together, where the finish or execute method of one job can safely enqueue the exact same class again for the next page?
+
+Queueable Apex is the perfect tool for this specific scenario.
+
+Here is exactly how that "chaining" works:
+
+Your Queueable class (which implements Database.AllowsCallouts) makes the HTTP GET request for Page 1.
+
+It parses the JSON response and processes the records.
+
+It checks the response for a nextPageToken.
+
+If the token exists, the code takes that token, passes it into the constructor of a new instance of that exact same Queueable class, and uses System.enqueueJob() to put it in the queue.
+
+It is basically a relay race where the baton is the next page token! 🏃‍♂️ (Batch Apex is also great, but usually only if you already know the exact number of pages upfront using a custom Iterable).
+
+## What happens if a Named Credential's authentication token expires mid-transaction during an Apex callout?
+
+
 
