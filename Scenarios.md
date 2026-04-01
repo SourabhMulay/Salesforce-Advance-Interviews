@@ -57,4 +57,80 @@ For a complex, nested object, you might do a deep clone: this.localData = JSON.p
 The Result: The child component mutates this.localData freely without hitting the read-only proxy error, because it is no longer touching the parent's original reference.
 
 
+## What happens if you call an imperative Apex method inside connectedCallback() without handling the promise rejection?
+
+Let's look at how JavaScript handles Promises in this lifecycle hook.
+
+When you call an imperative Apex method, it returns a Promise. If that Apex method fails (perhaps due to a query limit or a null pointer exception) and you haven't handled the rejection, a couple of things happen:
+
+The Silent UI Failure: The Lightning Web Component framework will not automatically show an error message to the user on the screen.
+
+The Console Error 🛑: The error is swallowed by the UI, but if you open the browser's developer tools, you will see an "Uncaught (in promise)" error in the console.
+
+The Stuck State ⏳: This is the biggest risk. Often, developers set a property like isLoading = true before calling Apex, planning to set it to false when the data returns. If the promise is rejected and unhandled, the code to hide the spinner never runs, and the user is left staring at a perpetually loading screen.
+
+To prevent this, we need to explicitly tell the component what to do if the server returns an error.
+
+If we are writing standard Promise syntax (using .then() for the success response), what block do we need to chain onto the end of it to catch that rejection?
+
+## Describe what happens when two triggers on the same object both perform DML on a related object , what risks does this introduce?
+
+Gemini said
+Having multiple triggers on the same object is generally considered an anti-pattern in Salesforce. When two triggers on the same object perform DML on the same related record, it introduces a few critical system risks.
+
+Here are the two biggest dangers ⚠️:
+
+Unpredictable Execution Order 🎲: Salesforce does not guarantee the order in which multiple triggers on the same object will execute.
+
+Row Locking (UNABLE_TO_LOCK_ROW) 🔒: When a record is being updated, the database locks it to prevent other processes from changing it at the exact same millisecond. If both triggers try to update the same related record during a complex or bulk transaction, they can collide, causing the entire transaction to fail with a locking error.
+
+## What happens if a Queueable Apex job is enqueued inside a trigger that fires on a bulk load of 10,000 records?
+
+When you insert or update a large number of records, Salesforce doesn't send them all through the trigger at the exact same time. Instead, to manage memory and performance, it breaks those 10,000 records down into smaller, more manageable chunks.
+
+Do you recall how many records Salesforce processes in a single trigger chunk by default? It's 200!! 
+
+Exactly! 200 records per chunk.
+
+So, if a bulk load of 10,000 records comes in, Salesforce divides it into exactly 50 chunks (10,000 / 200). This means your trigger will execute 50 separate times within that single transaction.
+
+Here is where the risk comes in: If your trigger contains code that blindly enqueues a Queueable job every time it runs, it will try to add 50 jobs to the queue. The Salesforce governor limit for adding Queueable jobs in a single synchronous transaction is exactly 50.
+
+If a user uploads 10,201 records, the trigger fires a 51st time, hits the limit, and the entire transaction crashes with a LimitException 💥.
+
+To fix this, we need a way to gather all the records across those multiple chunks and only process them once. Instead of enqueuing the job immediately inside the trigger, what kind of Apex variable could we use in a helper class to temporarily collect all those unique Record IDs as the chunks process?
+
+Gemini said
+Exactly. A static Set<Id> is the right tool because static variables maintain their state across all the individual trigger chunks within a single transaction.
+
+So, we create a static Set<Id> pendingIds and add the new records to it as each chunk runs. To avoid hitting that limit of 50 queueable jobs, we can use a static Boolean isJobEnqueued flag to ensure we only call System.enqueueJob(new MyQueueable(pendingIds)) one single time.
+
+But here is the architectural trap 🪤: When you instantiate a Queueable class and pass data into its constructor, Salesforce immediately takes a serialized "snapshot" of those variables right at that exact moment.
+
+If our trigger enqueues the job during the very first chunk of the bulk load, how many of the 10,000 record IDs will actually end up in the Queueable job to be processed?
+
+No problem! It is a very tricky scenario that catches a lot of developers off guard.
+
+Only the first 200 records would make it into the Queueable job.
+
+Here is why: When you call System.enqueueJob() during that first chunk, Salesforce takes a snapshot of your static Set<Id> right at that exact moment. At that time, it only contains the 200 IDs from chunk #1. As the remaining 49 chunks process, they successfully add their 9,800 IDs to the static Set, but the Queueable job has already been packaged up and sent to the queue. The train has already left the station! 🚂
+
+Because of this, trying to process massive data loads by enqueuing jobs directly inside triggers is usually an anti-pattern. A much safer architecture is to flag those records (e.g., setting a Needs_Processing__c checkbox to true) and having a Scheduled Batch job run in the background to sweep them all up safely.
+
+## What happens if you use String.format() with mismatched placeholders and arguments in Apex?
+
+Scenario 1: Too Many Placeholders 🛑
+If your string expects two variables, like 'Hello {0} and {1}', but you only pass a list with one item ['Alice'], the code fails at runtime. Apex tries to find the item at index 1 to replace the {1} placeholder, realizes the list is too short, and throws a fatal System.StringException: Invalid argument at index 1.
+
+Scenario 2: Too Many Arguments 🤔
+Now, let's think about the exact opposite situation.
+
+Suppose your template string only has one placeholder: 'Welcome, {0}!'
+But, you accidentally pass it a list containing three names: ['Alice', 'Bob', 'Charlie'].
+
+What do you think happens in this case? Does Apex throw an error because of the extra unused arguments, or does it handle them differently?
+
+- No Apex will not throw exception: Apex only throws a System.StringException if it is missing an argument for a placeholder.
+
+
 
