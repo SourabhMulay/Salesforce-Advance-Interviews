@@ -354,5 +354,85 @@ The Validation (The Bouncer) 🛡️: Inside your Apex method, you grab the raw 
 
 The Comparison ⚖️: If your calculated hash perfectly matches the hash sent in the header, the request is authentic and the data has not been tampered with. If they don't match, you immediately return an HTTP 401 Unauthorized status.
 
+## Explain what happens if an LWC has an infinite loop of @api property updates between parent and child ?
+
+When a parent and child component get caught in an infinite loop of @api updates, they essentially start playing a never-ending game of data ping-pong 🏓 at lightning speed.
+
+Here is how the trap usually unfolds:
+
+The Serve: The Parent passes a value down to the Child's @api property.
+
+The Return: The Child detects this change (perhaps in a setter) and fires a Custom Event back up to the Parent.
+
+The Loop: The Parent's event handler receives the event, updates the data, and passes it right back down to the Child.
+
+The Crash 💥
+Because this cycle happens synchronously in the browser's JavaScript engine, the execution stack fills up almost instantly. Before the browser can even paint the UI, it will hit its limit and throw a fatal error—typically Uncaught RangeError: Maximum call stack size exceeded. The component will crash, and the page will freeze or display an error state.
+
+To defend against this, we have to break the cycle by ensuring we only react when data has actually changed, rather than just reacting because a function fired.
+
+Thinking about the component lifecycle, which specific LWC hook is notorious for accidentally triggering these infinite loops if you update a reactive property inside of it without checking the previous state?
+
+Exactly. renderedCallback() is the hook where this trap usually happens.
+
+Because renderedCallback() fires every single time the component finishes updating the DOM, changing a reactive property inside of it tells the framework, "Hey, data changed, render the UI again!" That second render fires renderedCallback() again, and the cycle quickly spirals out of control 🔄.
+
+To safely execute code in this hook (like attaching a third-party chart library to a canvas element), we have to use a guard condition 🛡️. We typically create a private boolean property, like hasRendered = false;, and wrap our logic in an if (!this.hasRendered) block. Once the code runs, we flip the boolean to true so the logic never runs a second time.
+
+##  The Apex class your LWC relies on might change (new fields, removed fields). How would you design your LWC without breaking in production?
+
+This is a fantastic architectural question that separates junior developers from senior ones. Designing for change—often called "defensive programming"—is critical for enterprise applications.
+
+When an LWC relies on Apex, changes to the backend can break the frontend in two main ways: missing data or complete component crashes. To build a resilient LWC, we use a combination of platform features and architectural patterns.
+
+Let's start with the most powerful defense mechanism you have on the frontend: Schema Imports.
+
+Many developers access fields by hardcoding strings directly in their JavaScript or HTML, like this:
+const myName = record.Name; or const myCustom = record.My_Custom_Field__c;
+
+The safer, enterprise-grade approach is to import the field reference directly from the Salesforce schema at the top of your file:
+import MY_CUSTOM_FIELD from '@salesforce/schema/Account.My_Custom_Field__c';
+
+If you use this schema import approach in your Lightning Web Component, what actually happens at the Salesforce platform level if an Administrator goes into Object Manager and tries to delete My_Custom_Field__c?
+
+Exactly! Spot on. 🎯
+
+Salesforce will absolutely block the Administrator from deleting it.
+
+By importing the field using @salesforce/schema, you create a Hard Dependency (also known as Referential Integrity) in the Salesforce metadata engine. When the Admin clicks "Delete," Salesforce checks its dependency tree, sees your LWC relies on it, and throws a red error message telling them they have to remove the reference from the code first.
+
+If you had just hardcoded the string record.My_Custom_Field__c, the Admin would have been able to delete it successfully, and your component would have silently exploded the next time a user opened the page!
 
 
+## What are the limitations of @track in modern LWC versions?
+
+The @track decorator has evolved significantly. In modern LWC (since the Spring '20 release), all fields in a component class are reactive by default. This means if you assign a new value to a property (like a String, Boolean, or a completely new Object reference), the component automatically rerenders. 🔄
+
+However, @track is still used for deep reactivity. Its main limitation is that it is no longer the "catch-all" for reactivity, and using it incorrectly can lead to performance overhead or confusing code.
+
+Here is a look at the boundaries of @track today:
+
+1. Assignment vs. Mutation 🏗️
+The biggest "limitation" of modern LWC's default reactivity is that it only tracks assignments.
+
+Default Reactivity: If you have myObj = { name: 'Salesforce' } and you run this.myObj = { name: 'LWC' }, the UI updates because the entire reference changed.
+
+Mutation: If you run this.myObj.name = 'LWC', the UI will not update by default. This is where @track is required—it tells LWC to "reach inside" the object and watch for internal changes.
+
+2. The "Plain Object" Constraint 📦
+@track only works effectively on plain JavaScript objects and arrays.
+
+If you have a property that holds an instance of a custom class (e.g., this.user = new User()), @track will not successfully observe internal changes to that class instance's fields. LWC’s engine is optimized for data objects, not complex class hierarchies.
+
+3. Performance Overhead ⚡
+Because @track recursively wraps objects in Proxies to intercept changes, it is more "expensive" than default reactivity. Overusing @track on massive, deeply nested data structures can lead to:
+
+Increased memory usage.
+
+Slightly slower execution times during data manipulation.
+
+## In Salesforce , how would you consolidate multiple component level Apex callouts into a single batched request? 
+
+<placeholder>
+
+## 
