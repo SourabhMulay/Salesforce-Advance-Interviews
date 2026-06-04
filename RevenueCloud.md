@@ -6,20 +6,26 @@ The sales lifecycle starts with lead generation, where the sales team identifies
 
 solution that provides a unified customer experience and seamless processes to support all of the following stages of the sales cycle.
 
-Manage the product catalog.
+1. Manage the product catalog.
+2. Define product pricing.
+3. Configure product workflows.
+4. Create quotes and capture orders.
+5. Manage asset lifecycle.
+6. Manage contracts.
+7. Implement order-to-cash workflow.
+8. Generate revenue lifecycle intelligence.
 
-Define product pricing.
 
-Configure product workflows.
 
-Create quotes and capture orders.
 
-Manage asset lifecycle.
 
-Manage contracts.
 
-Implement order-to-cash workflow.
 
-Generate revenue lifecycle intelligence.
+
+
+
+
+
+
 
 
